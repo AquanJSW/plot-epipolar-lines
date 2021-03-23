@@ -11,16 +11,16 @@ def argparser():
         description="Plot horizontal lines through a single image or 2 "
                     "concatenated images."
     )
-    parser.add_argument('-f', '--file', nargs='+', type=str,
+    parser.add_argument('-f', '--file', nargs='+', type=str, required=True,
                         help='Specifying one or two images.')
     parser.add_argument('-s', '--show', default=False, action='store_true',
                         help='Enable showing output image.')
-    parser.add_argument('--disable_write', default=False, action='store_true',
+    parser.add_argument('--disable_output', default=False, action='store_true',
                         help='By default, output image would be saved.')
     parser.add_argument('-o', '--output', default="concatenated.jpg",
                         help="Output file path. This option implies enabling"
                              " write.")
-    parser.add_argument('-n', '--number', default=10, type=int,
+    parser.add_argument('-c', '--line_count', default=10, type=int,
                         help="The number of plotted lines along y-axis.")
     parser.add_argument('-i', '--interval', default=0, type=int,
                         help='Only valid when input 2 images: the interval '
@@ -29,37 +29,53 @@ def argparser():
                         help="The padding color of interval.")
     parser.add_argument('--line_rgb', nargs=3, type=int, default=[0, 0, 0],
                         help="The horizontal lines' color.")
-    parser.add_argument('--line_width', default=3, type=int,
+    parser.add_argument('-w', '--line_width', default=3, type=int,
                         help="Width of horizontal lines.")
     return parser.parse_args()
 
 
-def main(left_path, right_path, lines, interval):
-    imgs = [Image.open(left_path), Image.open(right_path)]
-    widths, heights = zip(*(img.size for img in imgs))
+def main(file: list, line_count: int, interval: int,
+         interval_rgb: list, line_rgb: list, line_width: int) -> Image.Image:
+    images = [Image.open(image) for image in file]
+    widths, heights = zip(*(images.size for images in images))
 
-    total_width = sum(widths) + interval * (len(imgs) - 1)
+    total_width = sum(widths) + interval * (len(images) - 1)
     max_height = max(heights)
 
-    img_concat = Image.new('RGB', (total_width, max_height))
+    concatenated = Image.new('RGB', (total_width, max_height))
 
-    x_offset = 0
-    for img in imgs:
-        img_concat.paste(img, (x_offset, 0))
-        x_offset += img.size[0] + interval
+    offset = 0
+    if interval:
+        image_interval = Image.new('RGB', (interval, max_height),
+                                   tuple(interval_rgb))
+    for image in images:
+        concatenated.paste(image, (offset, 0))
+        if interval:
+            concatenated.paste(image_interval, (offset + image.size[0], 0))
+        offset += image.size[0] + interval
 
-    draw = ImageDraw.Draw(img_concat)
-    y_offset = 0
-    y_interval = int(max_height / (lines + 1))
-    for _ in range(lines):
-        y_offset += y_interval
-        draw.line((0, y_offset, total_width, y_offset), fill=(200, 0, 0),
-                  width=2)
-
-    img_concat.save('/home/tjh/nas/tmp/out3_rgb.jpg')
+    draw = ImageDraw.Draw(concatenated)
+    offset = 0
+    line_interval = int(max_height / (line_count + 1))
+    if line_width >= line_interval:
+        raise Warning("Too wide line.")
+    for _ in range(line_count):
+        offset += line_interval
+        draw.line((0, offset, total_width, offset), fill=tuple(line_rgb),
+                  width=line_width)
+    return concatenated
 
 
 if __name__ == '__main__':
-    main('/home/tjh/nas/rdr/NLB_637365613RAS_F0790654NCAM0.JPG',
-         '/home/tjh/nas/rdr/NRB_637365613RAS_F0790654NCAM0.JPG',
-         10, 10)
+    args = argparser()
+    output_image = main(file=args.file,
+                        line_count=args.line_count,
+                        interval=args.interval,
+                        interval_rgb=args.interval_rgb,
+                        line_width=args.line_width,
+                        line_rgb=args.line_rgb,
+                        )
+    if args.show:
+        output_image.show("Concatenated")
+    if not args.disable_output:
+        output_image.save(args.output)
